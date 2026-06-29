@@ -6,9 +6,16 @@ frame, and zoom to pixel level to spot encoding artifacts. Like slow.pics, but
 for live video instead of stills.
 
 Built on **libmpv** (decode + libplacebo color management, incl. HDR/10-bit) and
-**PySide6**. Two mpv instances render into offscreen FBOs that a fragment shader
-composites, giving A/B toggle, split-wipe, difference, and onion-skin views with
-correct per-source color (e.g. HDR tonemapped vs native SDR).
+**PySide6**. Two mpv instances render into offscreen float FBOs that a fragment
+shader composites, giving A/B toggle, split-wipe, difference, and onion-skin
+views with correct per-source color.
+
+On macOS the composite is drawn into a custom float `NSOpenGLView` whose window
+colorspace we control, which enables **EDR / true HDR passthrough**: each source
+is auto-detected as HDR or SDR and rendered correctly (HDR shown bright via PQ on
+an HDR-enabled display, SDR via BT.709). Toggling A↔B switches the surface
+colorspace to match the shown source. `Force SDR` tonemaps everything (and is the
+automatic fallback when the display has no EDR headroom).
 
 ## Requirements
 
@@ -39,8 +46,9 @@ Or drop two files onto the window / use **Open…** (`O`).
 | `+` `-` / wheel | zoom |
 | `W A S D` | pan |
 | `0` | reset zoom/pan |
+| `H` | Force SDR (tonemap everything); HDR is otherwise auto per source |
+| `I` | toggle the on-screen OSD |
 | `C` | native-res screenshot per source → Desktop (both A & B in composite modes) |
-| `Shift`+`C` | window screenshot of the current composite (as displayed) → Desktop |
 | `F` | fullscreen |
 | `O` | open files |
 | `Q` | quit |
@@ -51,6 +59,7 @@ pausing re-locks them. (Smooth realtime synced playback is planned.)
 
 ## Status
 
-Early prototype. Working: the comparison engine and all view modes above.
-Planned: master/follower realtime sync, alignment (frame offset, resolution/crop
-mismatch), frame export + slow.pics upload, bookmarks, loupe.
+Early prototype. Working: the comparison engine, all view modes, and macOS
+HDR/EDR passthrough. Planned: master/follower realtime sync, alignment (frame
+offset, resolution/crop mismatch), frame export + slow.pics upload, bookmarks,
+loupe.
