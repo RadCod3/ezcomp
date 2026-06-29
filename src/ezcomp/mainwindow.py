@@ -13,6 +13,14 @@ from . import constants as C
 from . import edr_render
 
 
+def _timecode(seconds):
+    s = max(0.0, seconds)
+    h = int(s // 3600)
+    m = int((s % 3600) // 60)
+    sec = s % 60
+    return f"{h}:{m:02d}:{sec:06.3f}"
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, path_a=None, path_b=None):
         super().__init__()
@@ -163,7 +171,7 @@ class MainWindow(QtWidgets.QMainWindow):
             f"| A:{s['a']}({srcs[0]}) B:{s['b']}({srcs[1]})")
         self.view.updateOsd_(
             f"[{cs}{forced}]  {state}  mode {C.MODE_NAMES[s['mode']]}{pstr}\n"
-            f"frame {s['frame']}   t {s['time']:.3f}s   zoom {s['zoom']:.2f}×\n"
+            f"frame {s['frame']}   {_timecode(s['time'])}   zoom {s['zoom']:.2f}×\n"
             f"A  {s['a']} ({srcs[0]})\nB  {s['b']} ({srcs[1]})")
 
     def showEvent(self, e):

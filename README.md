@@ -47,11 +47,15 @@ Or drop two files onto the window / use **Open…** (`O`).
 | `W A S D` | pan |
 | `0` | reset zoom/pan |
 | `H` | Force SDR (tonemap everything); HDR is otherwise auto per source |
-| `I` | toggle the on-screen OSD |
+| `I` | toggle the on-screen OSD (info + seek bar) |
 | `C` | native-res screenshot per source → Desktop (both A & B in composite modes) |
 | `F` | fullscreen |
 | `O` | open files |
 | `Q` | quit |
+
+The OSD overlay shows the color state, mode, **frame number + timecode**, zoom,
+and the A/B filenames, plus a **seek bar** at the bottom (drag to scrub both
+sources together). Toggle it all with `I`.
 
 Navigation is **frame-locked**: paused step/seek keeps both sources on the same
 frame. Native playback uses two real-time clocks and can drift slightly;

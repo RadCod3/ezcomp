@@ -7,12 +7,13 @@ colorspace tag + mpv output transfer matched to the tag.
 """
 import ctypes
 import sys
+import time
 
 import objc
 from Cocoa import (
     NSOpenGLView, NSOpenGLPixelFormat, NSTimer, NSRunLoop, NSRunLoopCommonModes,
-    NSMakeRect, NSTextField, NSColor, NSColorSpace, NSFont,
-    NSViewMinYMargin, NSViewMaxXMargin,
+    NSMakeRect, NSTextField, NSSlider, NSColor, NSColorSpace, NSFont,
+    NSViewMinYMargin, NSViewMaxXMargin, NSViewWidthSizable, NSViewMaxYMargin,
 )
 from Quartz import CGColorSpaceCreateWithName, kCGColorSpaceExtendedSRGB
 from Cocoa import (
@@ -72,6 +73,7 @@ class Engine:
         self.panx = 0.0
         self.pany = 0.0
         self.frame_index = 0
+        self._frame_count_cache = None
         self.hdr_src = [False, False]   # per-source: is this file HDR?
         self.edr_available = True       # set by the UI from NSScreen
         self.force_sdr = False          # manual override / no-EDR fallback
@@ -180,6 +182,7 @@ class Engine:
                 self.paths[i] = path
                 self.players[i].play(path)
         self._fps_cache = None
+        self._frame_count_cache = None
         self.frame_index = 0
         self.on_state_change()
 
@@ -207,6 +210,28 @@ class Engine:
         fr = self.players[0].estimated_frame_number
         if fr is not None:
             self.frame_index = int(fr)
+
+    def frame_count(self):
+        if self._frame_count_cache:
+            return self._frame_count_cache
+        p = self.players[0]
+        n = 0
+        try:
+            n = int(p.estimated_frame_count or 0)
+        except Exception:  # noqa: BLE001
+            n = 0
+        if not n:
+            try:
+                dur = p.duration
+                n = int(dur * self._fps()) if dur else 0
+            except Exception:  # noqa: BLE001
+                n = 0
+        if n:
+            self._frame_count_cache = n
+        return n
+
+    def seek_to_frame(self, frame):
+        self._seek_both_to_index(int(frame))
 
     def is_paused(self):
         return bool(self.players[0].pause)
@@ -371,6 +396,7 @@ class MpvGLView(NSOpenGLView):
         gl.flushBuffer()
 
     def tick_(self, _t):
+        self.refreshScrubber()
         self.setNeedsDisplay_(True)
 
     def acceptsFirstResponder(self):
@@ -402,8 +428,29 @@ class MpvGLView(NSOpenGLView):
             self.osd.setStringValue_(text)
 
     def toggleOsd(self):
-        if getattr(self, "osd", None) is not None:
-            self.osd.setHidden_(not self.osd.isHidden())
+        if getattr(self, "osd", None) is None:
+            return
+        hidden = not self.osd.isHidden()
+        self.osd.setHidden_(hidden)
+        if getattr(self, "scrubber", None) is not None:
+            self.scrubber.setHidden_(hidden)
+
+    # ---- scrubber (seek bar) ----
+    def scrub_(self, sender):
+        self._scrub_active = time.time()
+        self.engine.seek_to_frame(sender.doubleValue())
+
+    def refreshScrubber(self):
+        s = getattr(self, "scrubber", None)
+        if s is None or s.isHidden():
+            return
+        if time.time() - getattr(self, "_scrub_active", 0.0) < 0.3:
+            return  # don't fight the user while dragging
+        total = self.engine.frame_count()
+        if total > 0:
+            if s.maxValue() != total:
+                s.setMaxValue_(float(total))
+            s.setDoubleValue_(float(self.engine.frame_index))
 
     def setOsdHdr_(self, hdr):
         """In a PQ window, sRGB white (1.0) maps to only ~SDR-white nits and the
@@ -449,6 +496,18 @@ def make_view(engine):
     osd.setAutoresizingMask_(NSViewMinYMargin | NSViewMaxXMargin)
     view.addSubview_(osd)
     view.osd = osd
+
+    scrub = NSSlider.alloc().initWithFrame_(NSMakeRect(10, 8, 80, 18))
+    scrub.setMinValue_(0.0)
+    scrub.setMaxValue_(1.0)
+    scrub.setContinuous_(True)
+    scrub.setRefusesFirstResponder_(True)  # keep keyboard focus on Qt
+    scrub.setTarget_(view)
+    scrub.setAction_("scrub:")
+    scrub.setAutoresizingMask_(NSViewWidthSizable | NSViewMaxYMargin)
+    view.addSubview_(scrub)
+    view.scrubber = scrub
+    view._scrub_active = 0.0
 
     timer = NSTimer.timerWithTimeInterval_target_selector_userInfo_repeats_(
         1.0 / 60, view, "tick:", None, True)
