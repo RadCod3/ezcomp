@@ -20,3 +20,10 @@ MODE_NAMES = {
 
 # Default tunable per-mode parameter (wipe position / diff gain / onion mix)
 DEFAULT_PARAMS = {MODE_WIPE: 0.5, MODE_DIFF: 12.0, MODE_ONION: 0.5}
+
+
+def timecode(seconds):
+    s = max(0.0, float(seconds))
+    h = int(s // 3600)
+    m = int((s % 3600) // 60)
+    return f"{h}:{m:02d}:{s % 60:06.3f}"

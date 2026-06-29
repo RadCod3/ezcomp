@@ -14,6 +14,8 @@ from Cocoa import (
     NSOpenGLView, NSOpenGLPixelFormat, NSTimer, NSRunLoop, NSRunLoopCommonModes,
     NSMakeRect, NSTextField, NSSlider, NSColor, NSColorSpace, NSFont,
     NSViewMinYMargin, NSViewMaxXMargin, NSViewWidthSizable, NSViewMaxYMargin,
+    NSTrackingArea, NSTrackingMouseMoved, NSTrackingActiveInKeyWindow,
+    NSTrackingInVisibleRect, NSTextAlignmentCenter,
 )
 from Quartz import CGColorSpaceCreateWithName, kCGColorSpaceExtendedSRGB
 from Cocoa import (
@@ -414,6 +416,35 @@ class MpvGLView(NSOpenGLView):
     def mouseDragged_(self, e):
         self._wipe_from_event(e)
 
+    # ---- hover preview tooltip over the seek bar ----
+    def mouseMoved_(self, e):
+        s = getattr(self, "scrubber", None)
+        tip = getattr(self, "tip", None)
+        if s is None or tip is None or s.isHidden():
+            if tip is not None:
+                tip.setHidden_(True)
+            return
+        p = self.convertPoint_fromView_(e.locationInWindow(), None)
+        fr = s.frame()
+        on_bar = (fr.origin.x <= p.x <= fr.origin.x + fr.size.width
+                  and fr.origin.y - 6 <= p.y <= fr.origin.y + fr.size.height + 6)
+        total = self.engine.frame_count()
+        if not (on_bar and total > 0):
+            tip.setHidden_(True)
+            return
+        frac = max(0.0, min(1.0, (p.x - fr.origin.x) / max(1.0, fr.size.width)))
+        t = (frac * total) / self.engine._fps()
+        tip.setStringValue_(C.timecode(t))
+        tw = tip.frame().size.width
+        x = max(2.0, min(self.bounds().size.width - tw - 2.0, p.x - tw / 2.0))
+        tip.setFrameOrigin_((x, fr.origin.y + fr.size.height + 4))
+        tip.setHidden_(False)
+
+    def mouseExited_(self, _e):
+        tip = getattr(self, "tip", None)
+        if tip is not None:
+            tip.setHidden_(True)
+
     def _wipe_from_event(self, e):
         if self.engine.mode != C.MODE_WIPE:
             return
@@ -468,6 +499,8 @@ class MpvGLView(NSOpenGLView):
         self.osd.setTextColor_(txt)
         self.osd.setBackgroundColor_(
             NSColor.colorWithCalibratedWhite_alpha_(0.0, 0.55))
+        if getattr(self, "tip", None) is not None:
+            self.tip.setTextColor_(txt)
 
 
 def make_view(engine):
@@ -508,6 +541,27 @@ def make_view(engine):
     view.addSubview_(scrub)
     view.scrubber = scrub
     view._scrub_active = 0.0
+
+    tip = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 96, 18))
+    tip.setBezeled_(False)
+    tip.setEditable_(False)
+    tip.setSelectable_(False)
+    tip.setDrawsBackground_(True)
+    tip.setBackgroundColor_(NSColor.colorWithCalibratedWhite_alpha_(0.0, 0.8))
+    tip.setTextColor_(NSColor.whiteColor())
+    tip.setAlignment_(NSTextAlignmentCenter)
+    tip.setFont_(NSFont.monospacedSystemFontOfSize_weight_(11.0, 0.0))
+    tip.setHidden_(True)
+    view.addSubview_(tip)
+    view.tip = tip
+
+    # One tracking area for hover; InVisibleRect auto-follows the view on resize.
+    opts = (NSTrackingMouseMoved | NSTrackingActiveInKeyWindow
+            | NSTrackingInVisibleRect)
+    ta = NSTrackingArea.alloc().initWithRect_options_owner_userInfo_(
+        view.bounds(), opts, view, None)
+    view.addTrackingArea_(ta)
+    view._tracking = ta
 
     timer = NSTimer.timerWithTimeInterval_target_selector_userInfo_repeats_(
         1.0 / 60, view, "tick:", None, True)
