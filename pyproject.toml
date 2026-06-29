@@ -5,6 +5,7 @@ description = "Interactive side-by-side quality comparison of two video files"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "pyobjc-framework-cocoa>=12.2.1",
     "pyside6>=6.11.1",
     "python-mpv>=1.0.8",
 ]

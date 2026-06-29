@@ -1,4 +1,6 @@
 """Main window: toolbar, drag-and-drop loading, HUD overlay, key bindings."""
+import sys
+
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from . import constants as C
@@ -130,6 +132,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.open_files()
         elif k == K.Key_F:
             self.toggle_fullscreen()
+        elif k == K.Key_C:
+            if e.modifiers() & K.ShiftModifier:
+                self.take_screenshot_window()
+            else:
+                self.take_screenshot_native()
         elif k == K.Key_Space:
             c.play_pause()
         elif k == K.Key_Tab:
@@ -172,6 +179,71 @@ class MainWindow(QtWidgets.QMainWindow):
             c.pan(-0.05, 0)
         else:
             super().keyPressEvent(e)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        if not getattr(self, "_cs_applied", False):
+            self._cs_applied = True
+            self._tag_window_srgb()
+
+    def _tag_window_srgb(self):
+        """macOS: tag the window as sRGB so the OS color-manages our (already
+        sRGB) output to the display's gamut — otherwise sRGB bytes are shown
+        raw on wide-gamut (P3) panels and look over-saturated/bright."""
+        if sys.platform != "darwin":
+            return
+        try:
+            import objc
+            from AppKit import NSColorSpace
+            view = objc.objc_object(c_void_p=int(self.winId()))
+            win = view.window()
+            if win is not None:
+                win.setColorSpace_(NSColorSpace.sRGBColorSpace())
+        except Exception as ex:  # noqa: BLE001
+            print("sRGB window tag failed:", ex, file=sys.stderr)
+
+    def _shot_dir(self):
+        import os
+        d = os.path.expanduser("~/Desktop")
+        return d if os.path.isdir(d) else os.path.expanduser("~")
+
+    def take_screenshot_native(self):
+        """Native-res per-source screenshot(s) via mpv. A/B mode -> that source;
+        composite modes -> both A and B as clean source frames."""
+        import os
+        import time
+
+        s = self.comp.status()
+        frame = s["frame"] if s else 0
+        ts = time.strftime("%H%M%S")
+        mode = self.comp.mode
+        if mode == C.MODE_A:
+            targets = [(0, "A")]
+        elif mode == C.MODE_B:
+            targets = [(1, "B")]
+        else:
+            targets = [(0, "A"), (1, "B")]
+        names = []
+        for idx, label in targets:
+            name = f"ezcomp_{label}_f{frame}_{ts}.png"
+            self.comp.screenshot_source(idx, os.path.join(self._shot_dir(), name))
+            names.append(name)
+        self._show_flash("Saved " + ", ".join(names))
+
+    def take_screenshot_window(self):
+        """As-displayed capture of the current composite (window resolution)."""
+        import os
+        import time
+
+        s = self.comp.status()
+        frame = s["frame"] if s else 0
+        mode = C.MODE_NAMES[self.comp.mode]
+        name = f"ezcomp_window_{mode}_f{frame}_{time.strftime('%H%M%S')}.png"
+        path = os.path.join(self._shot_dir(), name)
+        if self.comp.grab_window().save(path):
+            self._show_flash(f"Saved {name}")
+        else:
+            self._show_flash("Screenshot failed")
 
     def toggle_fullscreen(self):
         if self.isFullScreen():

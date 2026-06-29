@@ -23,9 +23,15 @@ def make_player():
         hwdec="auto-copy",
         keep_open="yes",
         pause="yes",
-        scale="nearest",             # crisp pixels when zoomed in
-        cscale="nearest",
+        # High-quality scaling by default (matches mpv/IINA gpu-hq look);
+        # `scale` is swapped to nearest dynamically when magnified past 1:1
+        # for pixel-accurate artifact inspection. See Compositor._apply_scalers.
+        scale="ewa_lanczossharp",
+        cscale="ewa_lanczossharp",
         dscale="mitchell",
+        correct_downscaling="yes",
+        linear_downscaling="yes",
+        sigmoid_upscaling="yes",
         tone_mapping="bt.2390",      # HDR -> SDR via libplacebo
         osc="no",
         input_default_bindings="no",
@@ -88,6 +94,9 @@ class Compositor(QOpenGLWidget):
             self.set_sources(*self._pending)
             self._pending = None
 
+    def resizeGL(self, w, h):
+        self._apply_scalers()
+
     def _ensure_fbos(self, w, h):
         for i in range(2):
             f = self._fbo[i]
@@ -143,6 +152,7 @@ class Compositor(QOpenGLWidget):
                 self.players[i].play(path)
         self._fps_cache = None
         self.frame_index = 0
+        QtCore.QTimer.singleShot(300, self._apply_scalers)  # once src height known
         self.state_changed.emit()
 
     # ---- sync / navigation ----
@@ -212,6 +222,19 @@ class Compositor(QOpenGLWidget):
         self._both(lambda p: setattr(p, "video_zoom", self.zoom))
         self._both(lambda p: setattr(p, "video_pan_x", self.panx))
         self._both(lambda p: setattr(p, "video_pan_y", self.pany))
+        self._apply_scalers()
+
+    def _apply_scalers(self):
+        """Use crisp nearest-neighbour only when magnified past native pixels;
+        otherwise high-quality scaling (so the fit/fullscreen view stays sharp)."""
+        try:
+            src_h = self.players[0].height or 0
+        except Exception:  # noqa: BLE001
+            src_h = 0
+        disp_h = self.height() * self.devicePixelRatioF() * (2 ** self.zoom)
+        magnify = bool(src_h) and disp_h > src_h * 1.05
+        self._both(lambda p: setattr(p, "scale",
+                                     "nearest" if magnify else "ewa_lanczossharp"))
 
     def change_zoom(self, d):
         self.zoom = max(-2.0, min(6.0, self.zoom + d))
@@ -275,6 +298,22 @@ class Compositor(QOpenGLWidget):
             "a": os.path.basename(self.paths[0]) if self.paths[0] else "—",
             "b": os.path.basename(self.paths[1]) if self.paths[1] else "—",
         }
+
+    # ---- screenshots ----
+    def screenshot_source(self, idx, path):
+        """Native-resolution screenshot of one source via mpv's own pipeline.
+        Each source is captured at its own resolution (handles A/B of differing
+        scales). Needs our GL context current for the render-API screenshot."""
+        self.makeCurrent()
+        try:
+            self.players[idx].command("screenshot-to-file", path, "video")
+        finally:
+            self.doneCurrent()
+
+    def grab_window(self):
+        """As-displayed capture of the current composite (mode, zoom, letterbox)
+        at window resolution."""
+        return self.grabFramebuffer()
 
     def shutdown(self):
         self._sync_timer.stop()

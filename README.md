@@ -39,6 +39,8 @@ Or drop two files onto the window / use **Open…** (`O`).
 | `+` `-` / wheel | zoom |
 | `W A S D` | pan |
 | `0` | reset zoom/pan |
+| `C` | native-res screenshot per source → Desktop (both A & B in composite modes) |
+| `Shift`+`C` | window screenshot of the current composite (as displayed) → Desktop |
 | `F` | fullscreen |
 | `O` | open files |
 | `Q` | quit |
